@@ -6,30 +6,62 @@ on:
       - 'master'
     paths:
       - 'version.properties'
+
   workflow_dispatch:
     inputs:
       single_apk:
         description: 'Build only the universal apk'
         type: boolean
+        default: false
 
 env:
   BRANCH_NAME: ${{ github.base_ref || github.ref_name }}
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v7
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Read version information
+        id: version
+        shell: bash
+        run: |
+          VERSION_CODE=$(grep '^code[[:space:]]*=' version.properties | sed 's/^[^=]*=[[:space:]]*//')
+          VERSION_NAME=$(grep '^name[[:space:]]*=' version.properties | sed 's/^[^=]*=[[:space:]]*//')
+
+          if [ -z "$VERSION_CODE" ]; then
+            echo "ERROR: code not found in version.properties"
+            exit 1
+          fi
+
+          if [ -z "$VERSION_NAME" ]; then
+            echo "ERROR: name not found in version.properties"
+            exit 1
+          fi
+
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+          echo "Version code: $VERSION_CODE"
+          echo "Version name: $VERSION_NAME"
 
       - name: Decode Keystore File
         uses: timheuer/base64-to-file@v2
         id: android_keystore
         with:
           fileName: "android_keystore.keystore"
-          encodedString: ${{secrets.KEYSTORE_FILE}}
-      
+          encodedString: ${{ secrets.KEYSTORE_FILE }}
+
       - name: Accept Android SDK license
-        run: echo "y" | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager "build-tools;34.0.0"
+        run: |
+          echo "y" | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager \
+            "build-tools;34.0.0"
 
       - name: Set up JDK
         uses: actions/setup-java@v5
@@ -37,19 +69,114 @@ jobs:
           java-version: 17
           distribution: temurin
 
-      - if: ${{ inputs.single_apk == true }}
-        run: sed -i -e '/isEnable/s/true/false/' app/build.gradle.kts
+      - name: Build only universal APK
+        if: ${{ inputs.single_apk == true }}
+        run: |
+          sed -i -e '/isEnable/s/true/false/' app/build.gradle.kts
 
       - name: Build Android release
         run: fastlane release
         env:
-          KEYSTORE_FILE: ${{steps.android_keystore.outputs.filePath}}
-          KEYSTORE_PASSWORD: ${{secrets.KEYSTORE_PASSWORD}}
-          KEY_ALIAS: ${{secrets.KEY_ALIAS}}
-          KEY_PASSWORD: ${{secrets.KEY_PASSWORD}}
+          KEYSTORE_FILE: ${{ steps.android_keystore.outputs.filePath }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Verify APK files
+        shell: bash
+        run: |
+          APK_DIR="app/build/outputs/apk/foss/release"
+
+          if ! compgen -G "$APK_DIR/*.apk" > /dev/null; then
+            echo "ERROR: No APK files were produced."
+            echo "Expected APKs in: $APK_DIR"
+            exit 1
+          fi
+
+          echo "APK files produced:"
+          ls -lh "$APK_DIR"/*.apk
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: assets
-          path: ${{github.workspace}}/app/build/outputs/apk/foss/release/*.apk
+          name: foss-apk-${{ steps.version.outputs.version_name }}
+          path: ${{ github.workspace }}/app/build/outputs/apk/foss/release/*.apk
+
+      - name: Check existing GitHub Release
+        id: release_check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.version_name }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG does not exist."
+          fi
+
+      - name: Delete existing release assets
+        if: ${{ steps.release_check.outputs.exists == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.version_name }}
+        shell: bash
+        run: |
+          echo "Removing old release assets..."
+
+          gh release view "$TAG" \
+            --json assets \
+            --jq '.assets[].name' |
+          while IFS= read -r asset; do
+            if [ -n "$asset" ]; then
+              echo "Deleting asset: $asset"
+              gh release delete-asset "$TAG" "$asset" --yes
+            fi
+          done
+
+      - name: Create GitHub Release
+        if: ${{ steps.release_check.outputs.exists == 'false' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.version_name }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        shell: bash
+        run: |
+          gh release create "$TAG" \
+            app/build/outputs/apk/foss/release/*.apk \
+            --title "FOSS APK v${VERSION_NAME}" \
+            --generate-notes \
+            --notes "Android FOSS APK release v${VERSION_NAME} (version code ${VERSION_CODE})."
+
+      - name: Update existing GitHub Release
+        if: ${{ steps.release_check.outputs.exists == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.version_name }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        shell: bash
+        run: |
+          gh release upload "$TAG" \
+            app/build/outputs/apk/foss/release/*.apk \
+            --clobber
+
+          gh release edit "$TAG" \
+            --title "FOSS APK v${VERSION_NAME}" \
+            --notes "Android FOSS APK release v${VERSION_NAME} (version code ${VERSION_CODE})."
+
+      - name: Release summary
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          echo "======================================"
+          echo "FOSS Android Release"
+          echo "======================================"
+          echo "Version name: $VERSION_NAME"
+          echo "Version code: $VERSION_CODE"
+          echo "Release tag:  v$VERSION_NAME"
+          echo "======================================"
