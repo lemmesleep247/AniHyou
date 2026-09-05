@@ -69,6 +69,7 @@ class SettingsViewModel(
                 AppColorMode.PROFILE -> {
                     profileColor.firstOrNull()?.let { setAppColor(it) }
                 }
+
                 AppColorMode.CUSTOM -> {}
             }
         }
@@ -87,6 +88,12 @@ class SettingsViewModel(
     override fun setColorPalette(value: String) {
         viewModelScope.launch {
             defaultPreferencesRepository.setColorPalette(value)
+        }
+    }
+
+    override fun setColoredMedia(value: Boolean) {
+        viewModelScope.launch {
+            defaultPreferencesRepository.setColoredMedia(value)
         }
     }
 
@@ -111,6 +118,12 @@ class SettingsViewModel(
     override fun setAiringOnMyList(value: Boolean) {
         viewModelScope.launch {
             defaultPreferencesRepository.setAiringOnMyList(value)
+        }
+    }
+
+    override fun setUseFuzzySearch(value: Boolean) {
+        viewModelScope.launch {
+            defaultPreferencesRepository.setUseFuzzySearch(value)
         }
     }
 
@@ -306,6 +319,12 @@ class SettingsViewModel(
             }
             .launchIn(viewModelScope)
 
+        defaultPreferencesRepository.coloredMedia
+            .onEach { value ->
+                mutableUiState.update { it.copy(coloredMedia = value) }
+            }
+            .launchIn(viewModelScope)
+
         defaultPreferencesRepository.blurAdult
             .onEach { value ->
                 mutableUiState.update { it.copy(blurAdultContent = value) }
@@ -382,6 +401,13 @@ class SettingsViewModel(
         defaultPreferencesRepository.hideScores
             .onEach { value ->
                 mutableUiState.update { it.copy(hideScores = value) }
+            }
+            .launchIn(viewModelScope)
+
+        defaultPreferencesRepository.useFuzzySearch
+            .filterNotNull()
+            .onEach { value ->
+                mutableUiState.update { it.copy(useFuzzySearch = value) }
             }
             .launchIn(viewModelScope)
     }

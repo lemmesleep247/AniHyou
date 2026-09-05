@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.compose)
     alias(libs.plugins.koin.compiler)
     alias(libs.plugins.androidx.baselineprofile)
+    alias(libs.plugins.stability.analyzer)
 }
 
 val appPackageName: String by rootProject.extra
@@ -171,6 +172,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
 
     implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.core.performance)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
@@ -210,4 +212,8 @@ dependencies {
 
     implementation(libs.androidx.profileinstaller)
     "baselineProfile"(project(":baselineprofile"))
+}
+
+composeStabilityAnalyzer {
+    stabilityConfigurationFiles.add(isolated.rootProject.projectDirectory.file("stability_config.conf"))
 }

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.axiel7.anihyou.core.common.utils.DeviceUtils
 import com.axiel7.anihyou.core.domain.getValue
 import com.axiel7.anihyou.core.domain.setValue
 import com.axiel7.anihyou.core.model.AppColorMode
@@ -30,7 +31,7 @@ import com.axiel7.anihyou.core.resources.ColorUtils.hexToString
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
-class DefaultPreferencesRepository (
+class DefaultPreferencesRepository(
     private val dataStore: DataStore<Preferences>
 ) {
 
@@ -340,6 +341,12 @@ class DefaultPreferencesRepository (
         dataStore.setValue(COLOR_PALETTE_KEY, value)
     }
 
+    val coloredMedia = dataStore.getValue(COLORED_MEDIA, true)
+
+    suspend fun setColoredMedia(value: Boolean) {
+        dataStore.setValue(COLORED_MEDIA, value)
+    }
+
     val translatorApp = dataStore.getValue(TRANSLATOR_APP_KEY, default = TranslatorApp.DEFAULT.name)
         .map { TranslatorApp.valueOf(it) }
 
@@ -353,6 +360,13 @@ class DefaultPreferencesRepository (
         dataStore.setValue(HIDE_SCORES_KEY, value)
     }
 
+    // search
+
+    val useFuzzySearch = dataStore.getValue(USE_FUZZY_SEARCH_KEY)
+
+    suspend fun setUseFuzzySearch(value: Boolean) {
+        dataStore.setValue(USE_FUZZY_SEARCH_KEY, value)
+    }
 
     companion object {
         private val ACCESS_TOKEN_KEY = stringPreferencesKey("access_token")
@@ -394,7 +408,11 @@ class DefaultPreferencesRepository (
 
         private val COLOR_PALETTE_KEY = stringPreferencesKey("color_palette")
 
+        private val COLORED_MEDIA = booleanPreferencesKey("colored_media")
+
         private val TRANSLATOR_APP_KEY = stringPreferencesKey("translator_app")
         private val HIDE_SCORES_KEY = booleanPreferencesKey("hide_scores")
+
+        private val USE_FUZZY_SEARCH_KEY = booleanPreferencesKey("use_fuzzy_search")
     }
 }

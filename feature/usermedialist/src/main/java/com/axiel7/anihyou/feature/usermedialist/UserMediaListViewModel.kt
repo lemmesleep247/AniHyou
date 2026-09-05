@@ -7,6 +7,8 @@ import com.axiel7.anihyou.core.base.PagedResult
 import com.axiel7.anihyou.core.base.extensions.firstBlocking
 import com.axiel7.anihyou.core.base.extensions.indexOfFirstOrNull
 import com.axiel7.anihyou.core.common.utils.NumberUtils.isNullOrZero
+import com.axiel7.anihyou.core.common.utils.SearchUtils.fuzzyScore
+import com.axiel7.anihyou.core.common.utils.SearchUtils.whiteSpaceRegex
 import com.axiel7.anihyou.core.common.viewmodel.UiStateViewModel
 import com.axiel7.anihyou.core.domain.repository.DefaultPreferencesRepository
 import com.axiel7.anihyou.core.domain.repository.ListPreferencesRepository
@@ -19,9 +21,11 @@ import com.axiel7.anihyou.core.model.media.asMediaListStatus
 import com.axiel7.anihyou.core.model.media.duration
 import com.axiel7.anihyou.core.model.media.isDescending
 import com.axiel7.anihyou.core.model.media.isTitle
+import com.axiel7.anihyou.core.model.media.plainName
 import com.axiel7.anihyou.core.model.media.titleComparator
 import com.axiel7.anihyou.core.network.fragment.BasicMediaListEntry
 import com.axiel7.anihyou.core.network.fragment.CommonMediaListEntry
+import com.axiel7.anihyou.core.network.type.MediaFormat
 import com.axiel7.anihyou.core.network.type.MediaListSort
 import com.axiel7.anihyou.core.network.type.MediaListStatus
 import com.axiel7.anihyou.core.network.type.MediaStatus
@@ -32,8 +36,10 @@ import com.axiel7.anihyou.core.resources.R
 import com.axiel7.anihyou.core.ui.common.navigation.Route
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.emptyFlow
@@ -47,7 +53,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.core.annotation.InjectedParam
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class UserMediaListViewModel(
     @InjectedParam arguments: Route.UserMediaList,
     private val mediaListRepository: MediaListRepository,
@@ -180,28 +186,46 @@ class UserMediaListViewModel(
         mutableUiState.value.run {
             selectedItem?.let { selectedItem ->
                 if (selectedItem.basicMediaListEntry != newListEntry) {
+                    val selectedListName = selectedListName ?: return
+                    val list = lists[selectedListName]?.toMutableList() ?: return
                     if (newListEntry != null) {
-                        entries.indexOfFirstOrNull { it.mediaId == selectedItem.mediaId }
+                        list.indexOfFirstOrNull { it.mediaId == selectedItem.mediaId }
                             ?.let { index ->
-                                val oldValue = entries[index]
+                                val oldValue = list[index]
+                                val newEntry = oldValue.copy(basicMediaListEntry = newListEntry)
                                 if (newListEntry.status != oldValue.basicMediaListEntry.status) {
-                                    entries.removeAt(index)
-                                    if (newListEntry.status == MediaListStatus.COMPLETED
-                                        && newListEntry.score.isNullOrZero()
-                                    ) {
-                                        mutableUiState.update { it.copy(openSetScoreDialog = true) }
+                                    list.removeAt(index)
+                                    newListEntry.status?.let { status ->
+                                        oldValue.media?.format?.let { mediaFormat ->
+                                            oldValue.media?.basicMediaDetails?.type?.let { mediaType ->
+                                                findListForEntry(status, mediaType, mediaFormat)
+                                                    ?.let { newList ->
+                                                        lists[newList] =
+                                                            lists[newList].orEmpty()
+                                                                .plus(newEntry)
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    val openSetScoreDialog =
+                                        newListEntry.status == MediaListStatus.COMPLETED
+                                            && newListEntry.score.isNullOrZero()
+                                    mutableUiState.update {
+                                        it.copy(
+                                            openSetScoreDialog = openSetScoreDialog,
+                                            selectedItem = newEntry
+                                        )
                                     }
                                 } else {
-                                    entries[index] =
-                                        oldValue.copy(basicMediaListEntry = newListEntry)
+                                    list[index] = newEntry
                                 }
                             }
                     } else {
-                        entries.remove(selectedItem)
+                        list.remove(selectedItem)
                     }
-                    selectedListName?.let { selectedListName ->
-                        lists[selectedListName] = entries
-                    }
+                    lists[selectedListName] = list
+                    onChangeList(selectedListName)
                 }
             }
         }
@@ -304,6 +328,21 @@ class UserMediaListViewModel(
         mutableUiState.update { it.copy(error = null, errorId = null) }
     }
 
+    private fun findListForEntry(
+        status: MediaListStatus,
+        mediaType: MediaType,
+        mediaFormat: MediaFormat
+    ): String? {
+        mutableUiState.value.run {
+            return lists.keys.find {
+                val listName = it.uppercase()
+                val statusName = status.plainName(mediaType).uppercase()
+                val mediaFormatName = mediaFormat.rawValue.replace('_', ' ').uppercase()
+                return@find listName == statusName || listName == "$statusName $mediaFormatName"
+            }
+        }
+    }
+
     private fun UserMediaListUiState.formatMatch(entry: CommonMediaListEntry) =
         mediaFormat?.value?.let { entry.media?.format == it } ?: true
 
@@ -351,6 +390,14 @@ class UserMediaListViewModel(
     }
 
     init {
+        defaultPreferencesRepository.useFuzzySearch
+            .filterNotNull()
+            .distinctUntilChanged()
+            .onEach { isEnabled ->
+                mutableUiState.update { it.copy(isFuzzySearchEnabled = isEnabled) }
+            }
+            .launchIn(viewModelScope)
+
         //search
         mutableUiState
             .distinctUntilChanged { old, new ->
@@ -362,39 +409,115 @@ class UserMediaListViewModel(
                         && old.genresAndTagsForSearch == new.genresAndTagsForSearch
                         && old.clearedFilters == new.clearedFilters
             }
-            .onEach {
-                mutableUiState.update { uiState ->
-                    uiState.entries.clear()
+            .debounce { uiState ->
+                val totalItems = uiState.entries.size
 
-                    if (uiState.selectedListName != null) {
-                        uiState.entries.addAll(uiState.lists[uiState.selectedListName].orEmpty())
+                when {
+                    totalItems <= 20 -> 0L
+                    totalItems >= 1000 -> 300L
+                    else -> (totalItems * 0.3).toLong()
+                }
+            }
+            .onEach { uiState ->
+                val filteredList = withContext(Dispatchers.Default) {
+
+                    val queryText = uiState.query.trim().lowercase()
+                    val isQueryNotBlank = queryText.isNotBlank()
+
+                    val baseEntries = if (uiState.selectedListName != null) {
+                        uiState.lists[uiState.selectedListName].orEmpty()
                     } else {
-                        val uniqueEntries = uiState.lists.values
-                            .flatten()
-                            .distinctBy { it.mediaId }
-                        uiState.entries.addAll(uniqueEntries)
+                        uiState.lists.values.flatten().distinctBy { it.mediaId }
                     }
 
-                    if (uiState.filterCount > 0 || uiState.query.isNotBlank()) {
-                        uiState.entries.retainAll { entry ->
-                            val titleMatch = if (uiState.query.isNotBlank()) {
-                                entry.media?.title?.let {
-                                    it.romaji?.contains(uiState.query, true) == true
-                                            || it.english?.contains(uiState.query, true) == true
-                                            || it.native?.contains(uiState.query, true) == true
-                                } == true
-                            } else true
+                    if (uiState.filterCount > 0 || isQueryNotBlank) {
+                        if (uiState.isFuzzySearchEnabled) {
+                            val queryTokens = if (isQueryNotBlank) {
+                                queryText.split(whiteSpaceRegex).filter { it.isNotEmpty() }
+                            } else emptyList()
 
-                            titleMatch
-                                    && uiState.formatMatch(entry)
-                                    && uiState.statusMatch(entry)
-                                    && uiState.countryMatch(entry)
-                                    && uiState.yearMatch(entry)
-                                    && uiState.genreMatch(entry)
-                                    && uiState.tagMatch(entry)
+                            val scoredEntries = baseEntries.mapNotNull { entry ->
+
+                                val matchesFilters = uiState.formatMatch(entry)
+                                        && uiState.statusMatch(entry)
+                                        && uiState.countryMatch(entry)
+                                        && uiState.yearMatch(entry)
+                                        && uiState.genreMatch(entry)
+                                        && uiState.tagMatch(entry)
+
+                                if (!matchesFilters) return@mapNotNull null
+
+                                if (isQueryNotBlank) {
+                                    val title = entry.media?.title
+                                    val romajiScore =
+                                        title?.romaji.fuzzyScore(queryText, queryTokens)
+                                    val englishScore =
+                                        title?.english.fuzzyScore(queryText, queryTokens)
+                                    val nativeScore =
+                                        title?.native.fuzzyScore(queryText, queryTokens)
+
+                                    val synonymScore = entry.media?.synonyms?.maxOfOrNull { syn ->
+                                        syn.fuzzyScore(queryText, queryTokens)
+                                    } ?: 0
+
+                                    val maxScore =
+                                        maxOf(romajiScore, englishScore, nativeScore, synonymScore)
+
+                                    (entry to maxScore).takeIf { maxScore > 0 }
+                                } else {
+                                    entry to 0
+                                }
+                            }
+                            if (isQueryNotBlank) {
+                                scoredEntries.sortedByDescending { it.second }.map { it.first }
+                            } else {
+                                scoredEntries.map { it.first }
+                            }
+                        } else {
+                            baseEntries.filter { entry ->
+                                val matchesFilters = uiState.formatMatch(entry)
+                                        && uiState.statusMatch(entry)
+                                        && uiState.countryMatch(entry)
+                                        && uiState.yearMatch(entry)
+                                        && uiState.genreMatch(entry)
+                                        && uiState.tagMatch(entry)
+
+                                if (!matchesFilters) return@filter false
+
+                                if (isQueryNotBlank) {
+                                    val title = entry.media?.title
+                                    val romajiMatch = title?.romaji?.contains(
+                                        queryText,
+                                        ignoreCase = true
+                                    ) == true
+                                    val englishMatch = title?.english?.contains(
+                                        queryText,
+                                        ignoreCase = true
+                                    ) == true
+                                    val nativeMatch = title?.native?.contains(
+                                        queryText,
+                                        ignoreCase = true
+                                    ) == true
+                                    val synonymMatch = entry.media?.synonyms?.any { syn ->
+                                        syn?.contains(queryText, ignoreCase = true) == true
+                                    } == true
+
+                                    romajiMatch || englishMatch || nativeMatch || synonymMatch
+                                } else {
+                                    true
+                                }
+                            }
                         }
+                    } else {
+                        baseEntries
                     }
-                    uiState
+                }
+                mutableUiState.update { state ->
+                    state.entries.apply {
+                        clear()
+                        addAll(filteredList)
+                    }
+                    state
                 }
             }
             .launchIn(viewModelScope)

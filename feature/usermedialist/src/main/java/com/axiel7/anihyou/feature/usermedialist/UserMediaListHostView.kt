@@ -23,12 +23,15 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -47,8 +50,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -57,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -130,11 +136,8 @@ private fun UserMediaListHostContent(
     val listState = rememberLazyListState()
     val gridState = rememberLazyGridState()
     val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
-    val hasScrolledUp by remember {
-        derivedStateOf {
-            scrollBehavior.state.collapsedFraction > 0.5f || listState.firstVisibleItemIndex == 0
-        }
-    }
+    val isScrollingUp by rememberIsScrollingUp(listState = listState, gridState = gridState)
+
     val bottomBarPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     var showListsSheet by rememberSaveable { mutableStateOf(false) }
@@ -216,7 +219,7 @@ private fun UserMediaListHostContent(
         floatingActionButton = {
             FloatingActionButton(
                 uiState = uiState,
-                hasScrolledUp = hasScrolledUp,
+                isScrollingUp = isScrollingUp,
                 showListsSheet = { showListsSheet = true },
                 scrollToTop = {
                     scope.launch {
@@ -242,7 +245,7 @@ private fun UserMediaListHostContent(
         ) {
             val isScrolled by remember {
                 derivedStateOf {
-                    listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
+                    listState.firstVisibleItemIndex > 1 || listState.firstVisibleItemScrollOffset > 1
                 }
             }
 
@@ -260,10 +263,12 @@ private fun UserMediaListHostContent(
                 uiState = uiState,
                 event = event,
                 isCompactScreen = isCompactScreen,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
                 contentPadding = if (!uiState.isMyList)
                     PaddingValues(bottom = 58.dp + padding.calculateBottomPadding())
                 else PaddingValues(bottom = 58.dp),
-                nestedScrollConnection = scrollBehavior.nestedScrollConnection,
                 navActionManager = navActionManager,
                 onShowEditSheet = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -344,7 +349,7 @@ private fun FilterBlock(
                 AnimatedVisibility(
                     visible = isSearchFocused || uiState.mediaStatus != null,
                     enter = if (uiState.filterCount > 0) chipEnter else chipEnterV,
-                    exit = if(uiState.filterCount > 0) chipExit else chipExitV
+                    exit = if (uiState.filterCount > 0) chipExit else chipExitV
                 ) {
                     FilterChipWithMenu(
                         title = stringResource(R.string.media_status),
@@ -406,10 +411,10 @@ private fun FilterBlock(
             }
         }
 
+
         val hasGenreTags = remember(uiState.genresAndTagsForSearch) {
             uiState.genresAndTagsForSearch.totalSize > 0
         }
-
         AnimatedVisibility(
             visible = !isPreview && (isSearchFocused || hasGenreTags),
             enter = fadeIn() + expandVertically(),
@@ -433,6 +438,7 @@ private fun FilterBlock(
             )
         }
 
+
         if (isSearchFocused || uiState.filterCount > 0) {
             HorizontalDivider()
         }
@@ -442,16 +448,16 @@ private fun FilterBlock(
 @Composable
 private fun FloatingActionButton(
     uiState: UserMediaListUiState,
-    hasScrolledUp: Boolean,
+    isScrollingUp: Boolean,
     showListsSheet: () -> Unit,
     scrollToTop: () -> Unit,
 ) {
     ExtendedFloatingActionButton(
         onClick = {
-            if (hasScrolledUp) showListsSheet()
-            else scrollToTop()
+            if (isScrollingUp) scrollToTop()
+            else showListsSheet()
         },
-        expanded = hasScrolledUp,
+        expanded = !isScrollingUp,
         text = {
             Text(
                 text = uiState.status?.localized(uiState.mediaType)
@@ -459,7 +465,7 @@ private fun FloatingActionButton(
             )
         },
         icon = {
-            if (!hasScrolledUp) {
+            if (isScrollingUp) {
                 Icon(
                     painter = painterResource(R.drawable.arrow_upward_24),
                     contentDescription = null,
@@ -475,6 +481,54 @@ private fun FloatingActionButton(
             }
         }
     )
+}
+
+@Composable
+private fun rememberIsScrollingUp(
+    listState: LazyListState,
+    gridState: LazyGridState,
+): State<Boolean> {
+    var lastListIndex by remember { mutableIntStateOf(listState.firstVisibleItemIndex) }
+    var lastListOffset by remember { mutableIntStateOf(listState.firstVisibleItemScrollOffset) }
+    var lastGridIndex by remember { mutableIntStateOf(gridState.firstVisibleItemIndex) }
+    var lastGridOffset by remember { mutableIntStateOf(gridState.firstVisibleItemScrollOffset) }
+
+    return remember(listState, gridState) {
+        derivedStateOf {
+            val listAtTop =
+                listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+            val gridAtTop =
+                gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0
+
+            if (listAtTop && gridAtTop) {
+                lastListIndex = 0
+                lastListOffset = 0
+                lastGridIndex = 0
+                lastGridOffset = 0
+                false
+            } else {
+                val listScrollingUp = if (listState.firstVisibleItemIndex != lastListIndex) {
+                    listState.firstVisibleItemIndex < lastListIndex
+                } else {
+                    listState.firstVisibleItemScrollOffset < lastListOffset
+                }.also {
+                    lastListIndex = listState.firstVisibleItemIndex
+                    lastListOffset = listState.firstVisibleItemScrollOffset
+                }
+
+                val gridScrollingUp = if (gridState.firstVisibleItemIndex != lastGridIndex) {
+                    gridState.firstVisibleItemIndex < lastGridIndex
+                } else {
+                    gridState.firstVisibleItemScrollOffset < lastGridOffset
+                }.also {
+                    lastGridIndex = gridState.firstVisibleItemIndex
+                    lastGridOffset = gridState.firstVisibleItemScrollOffset
+                }
+
+                listScrollingUp || gridScrollingUp
+            }
+        }
+    }
 }
 
 @Preview
