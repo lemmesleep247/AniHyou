@@ -2,7 +2,6 @@ package com.axiel7.anihyou
 
 import com.axiel7.anihyou.feature.activitydetails.ActivityDetailsViewModel
 import com.axiel7.anihyou.feature.activitydetails.publish.PublishActivityViewModel
-import com.axiel7.anihyou.feature.calendar.CalendarHostViewModel
 import com.axiel7.anihyou.feature.calendar.CalendarViewModel
 import com.axiel7.anihyou.feature.characterdetails.CharacterDetailsViewModel
 import com.axiel7.anihyou.feature.editmedia.EditMediaViewModel
@@ -28,6 +27,7 @@ import com.axiel7.anihyou.feature.profile.social.UserSocialViewModel
 import com.axiel7.anihyou.feature.profile.stats.UserStatsViewModel
 import com.axiel7.anihyou.feature.reviewdetails.ReviewDetailsViewModel
 import com.axiel7.anihyou.feature.settings.SettingsViewModel
+import com.axiel7.anihyou.feature.settings.customlinks.CustomLinksViewModel
 import com.axiel7.anihyou.feature.settings.customlists.CustomListsViewModel
 import com.axiel7.anihyou.feature.settings.liststyle.ListStyleSettingsViewModel
 import com.axiel7.anihyou.feature.settings.priority_colors.PriorityColorViewModel
@@ -46,7 +46,6 @@ val viewModelModule = module {
     viewModel<ActivityDetailsViewModel>()
     viewModel<PublishActivityViewModel>()
     viewModel<CalendarViewModel>()
-    viewModel<CalendarHostViewModel>()
     viewModel<CharacterDetailsViewModel>()
     viewModel<EditMediaViewModel>()
     viewModel<SearchViewModel>()
@@ -70,6 +69,7 @@ val viewModelModule = module {
     viewModel<ReviewDetailsViewModel>()
     viewModel<SettingsViewModel>()
     viewModel<CustomListsViewModel>()
+    viewModel<CustomLinksViewModel>()
     viewModel<ListStyleSettingsViewModel>()
     viewModel<StaffDetailsViewModel>()
     viewModel<StudioDetailsViewModel>()
