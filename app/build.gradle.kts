@@ -8,7 +8,7 @@ plugins {
     alias(libs.plugins.stability.analyzer)
 }
 
-val appPackageName: String by rootProject.extra
+val appPackageName = rootProject.extra["appPackageName"] as String
 
 val versionProps = Properties().also {
     it.load(project.rootProject.file("version.properties").reader())
@@ -75,6 +75,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            ndk {
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
         }
         create("benchmarkRelease") {
             matchingFallbacks += listOf("release")
@@ -205,7 +208,6 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.ui.test.junit4)
     debugImplementation(libs.ui.tooling)
     debugImplementation(libs.ui.test.manifest)
