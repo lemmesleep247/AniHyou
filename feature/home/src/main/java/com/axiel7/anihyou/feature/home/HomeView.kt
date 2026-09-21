@@ -1,5 +1,6 @@
 package com.axiel7.anihyou.feature.home
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -18,10 +19,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -36,7 +35,7 @@ import com.axiel7.anihyou.core.ui.common.LocalNavActionManager
 import com.axiel7.anihyou.core.ui.common.rememberSnackbarManager
 import com.axiel7.anihyou.core.ui.composables.DefaultScaffoldWithSmallTopAppBar
 import com.axiel7.anihyou.core.ui.composables.IconButtonWithBadge
-import com.axiel7.anihyou.core.ui.composables.appBarContainerColor
+import com.axiel7.anihyou.core.ui.composables.rememberTopBarContainerColor
 import com.axiel7.anihyou.feature.home.activity.ActivityFeedView
 import com.axiel7.anihyou.feature.home.current.CurrentView
 import com.axiel7.anihyou.feature.login.LoginView
@@ -56,9 +55,8 @@ fun HomeView(
         rememberTopAppBarState()
     )
     val topAppBarColors = TopAppBarDefaults.topAppBarColors()
-    val appBarContainerColor by remember {
-        derivedStateOf { topAppBarScrollBehavior.appBarContainerColor(topAppBarColors) }
-    }
+    val appBarContainerColor by rememberTopBarContainerColor(topAppBarColors, topAppBarScrollBehavior)
+
     var selectedTabIndex by rememberSaveable { mutableIntStateOf(defaultHomeTab.ordinal) }
     val snackbarManager = rememberSnackbarManager()
 
@@ -121,25 +119,29 @@ fun HomeView(
                     )
                 }
             }
-            when (HomeTab.entries[selectedTabIndex]) {
-                HomeTab.ACTIVITY_FEED -> {
-                    if (isLoggedIn) {
-                        ActivityFeedView(
-                            modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
-                        )
-                    } else {
-                        LoginView()
+            AnimatedContent(
+                targetState = HomeTab.entries[selectedTabIndex]
+            ) { tab ->
+                when (tab) {
+                    HomeTab.ACTIVITY_FEED -> {
+                        if (isLoggedIn) {
+                            ActivityFeedView(
+                                modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+                            )
+                        } else {
+                            LoginView()
+                        }
                     }
-                }
 
-                HomeTab.CURRENT -> {
-                    if (isLoggedIn) {
-                        CurrentView(
-                            isLoggedIn = true,
-                            modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
-                        )
-                    } else {
-                        LoginView()
+                    HomeTab.CURRENT -> {
+                        if (isLoggedIn) {
+                            CurrentView(
+                                isLoggedIn = true,
+                                modifier = Modifier.nestedScroll(topAppBarScrollBehavior.nestedScrollConnection),
+                            )
+                        } else {
+                            LoginView()
+                        }
                     }
                 }
             }

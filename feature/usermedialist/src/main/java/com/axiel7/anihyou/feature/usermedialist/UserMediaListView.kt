@@ -1,6 +1,6 @@
 package com.axiel7.anihyou.feature.usermedialist
 
-import android.util.Log
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,6 +37,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -135,6 +136,7 @@ fun UserMediaListView(
         } else {
             MediaListView(
                 uiState = uiState,
+                customMediaList = null,
                 event = event,
                 isCompactScreen = isCompactScreen,
                 modifier = modifier,
@@ -207,41 +209,45 @@ private fun TabbedView(
         }
     }
 
-    when (NovelTab.entries[selectedTabIndex]) {
-        NovelTab.MANGA -> {
-            MediaListView(
-                uiState = uiState,
-                customMediaList = uiState.mangaEntries,
-                event = event,
-                isCompactScreen = isCompactScreen,
-                modifier = modifier,
-                contentPadding = contentPadding,
-                navActionManager = navActionManager,
-                onShowEditSheet = onShowEditSheet,
-                lazyListState = lazyListState,
-                lazyGridState = lazyGridState,
-                allPriorityColors = allPriorityColors,
-                onClickPlus = onClickPlus,
-                stickyHeaderContent = combinedHeader
-            )
-        }
+    AnimatedContent(
+        targetState = NovelTab.entries[selectedTabIndex]
+    ) { tab ->
+        when (tab) {
+            NovelTab.MANGA -> {
+                MediaListView(
+                    uiState = uiState,
+                    customMediaList = uiState.mangaEntries,
+                    event = event,
+                    isCompactScreen = isCompactScreen,
+                    modifier = modifier,
+                    contentPadding = contentPadding,
+                    navActionManager = navActionManager,
+                    onShowEditSheet = onShowEditSheet,
+                    lazyListState = lazyListState,
+                    lazyGridState = lazyGridState,
+                    allPriorityColors = allPriorityColors,
+                    onClickPlus = onClickPlus,
+                    stickyHeaderContent = combinedHeader
+                )
+            }
 
-        NovelTab.NOVEL -> {
-            MediaListView(
-                uiState = uiState,
-                customMediaList = uiState.novelEntries,
-                event = event,
-                isCompactScreen = isCompactScreen,
-                modifier = modifier,
-                contentPadding = contentPadding,
-                navActionManager = navActionManager,
-                onShowEditSheet = onShowEditSheet,
-                lazyListState = lazyListState,
-                lazyGridState = lazyGridState,
-                allPriorityColors = allPriorityColors,
-                onClickPlus = onClickPlus,
-                stickyHeaderContent = combinedHeader
-            )
+            NovelTab.NOVEL -> {
+                MediaListView(
+                    uiState = uiState,
+                    customMediaList = uiState.novelEntries,
+                    event = event,
+                    isCompactScreen = isCompactScreen,
+                    modifier = modifier,
+                    contentPadding = contentPadding,
+                    navActionManager = navActionManager,
+                    onShowEditSheet = onShowEditSheet,
+                    lazyListState = lazyListState,
+                    lazyGridState = lazyGridState,
+                    allPriorityColors = allPriorityColors,
+                    onClickPlus = onClickPlus,
+                    stickyHeaderContent = combinedHeader
+                )
+            }
         }
     }
 }
@@ -249,7 +255,7 @@ private fun TabbedView(
 @Composable
 private fun MediaListView(
     uiState: UserMediaListUiState,
-    customMediaList: List<CommonMediaListEntry>? = null,
+    customMediaList: SnapshotStateList<CommonMediaListEntry>?,
     event: UserMediaListEvent?,
     isCompactScreen: Boolean,
     modifier: Modifier = Modifier,
@@ -308,7 +314,7 @@ private fun MediaListView(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LazyListGrid(
-    mediaList: List<CommonMediaListEntry>,
+    mediaList: SnapshotStateList<CommonMediaListEntry>,
     uiState: UserMediaListUiState,
     event: UserMediaListEvent?,
     allPriorityColors: AllPriorityColors,
@@ -368,7 +374,7 @@ private fun LazyListGrid(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LazyListTablet(
-    mediaList: List<CommonMediaListEntry>,
+    mediaList: SnapshotStateList<CommonMediaListEntry>,
     uiState: UserMediaListUiState,
     event: UserMediaListEvent?,
     allPriorityColors: AllPriorityColors,
@@ -482,7 +488,7 @@ private fun LazyListTablet(
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun LazyListPhone(
-    mediaList: List<CommonMediaListEntry>,
+    mediaList: SnapshotStateList<CommonMediaListEntry>,
     uiState: UserMediaListUiState,
     event: UserMediaListEvent?,
     allPriorityColors: AllPriorityColors,
