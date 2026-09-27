@@ -171,6 +171,7 @@ fun SwitchPreference(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     preferenceValue: Boolean?,
+    enabled: Boolean = true,
     @DrawableRes icon: Int? = null,
     iconTint: Color = MaterialTheme.colorScheme.primary,
     iconPadding: PaddingValues = PaddingValues(16.dp),
@@ -189,7 +190,7 @@ fun SwitchPreference(
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .clickable {
+                .clickable(enabled = enabled) {
                     onValueChange(preferenceValue?.not() ?: false)
                 }
                 .padding(vertical = verticalPadding),
@@ -242,6 +243,7 @@ fun SwitchPreference(
                 onCheckedChange = {
                     onValueChange(it)
                 },
+                enabled = enabled,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
         }//: Row
@@ -413,7 +415,8 @@ fun ScoreStepsPreferenceSheet(
     var openModal by remember { mutableStateOf(false) }
 
     var textFieldValue by remember(initialValue) {
-        mutableStateOf(if (allowDecimal) initialValue.toString() else initialValue.roundToInt().toString()
+        mutableStateOf(
+            if (allowDecimal) initialValue.toString() else initialValue.roundToInt().toString()
         )
     }
 
@@ -453,7 +456,8 @@ fun ScoreStepsPreferenceSheet(
                         if (isValid) {
                             val asNumber = input.toDoubleOrNull()
 
-                            textFieldValue = if (asNumber == null || asNumber <= maxValue) input else textFieldValue
+                            textFieldValue =
+                                if (asNumber == null || asNumber <= maxValue) input else textFieldValue
                             if (asNumber != null) {
                                 val clamped = asNumber.coerceIn(minValue, maxValue)
                                 value = clamped
@@ -478,6 +482,11 @@ fun ScoreStepsPreferenceSheet(
 
                 Slider(
                     state = sliderState,
+                    onValueChange = {
+                        sliderState.value = it
+                        textFieldValue = if (allowDecimal) ((it * 10f).roundToInt() / 10.0).toString()
+                        else it.roundToInt().toString()
+                    },
                     onValueChangeFinished = {
                         val input = sliderState.value
                         if (allowDecimal) {

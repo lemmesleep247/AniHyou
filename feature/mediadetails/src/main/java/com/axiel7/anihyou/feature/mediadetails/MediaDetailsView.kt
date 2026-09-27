@@ -1,5 +1,6 @@
 package com.axiel7.anihyou.feature.mediadetails
 
+import android.content.Intent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -36,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -68,14 +70,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
+import androidx.compose.ui.util.fastForEachIndexed
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.axiel7.anihyou.core.base.CUSTOM_URL_NAME_PLACEHOLDER
 import com.axiel7.anihyou.core.common.utils.ContextUtils.copyToClipBoard
 import com.axiel7.anihyou.core.common.utils.ContextUtils.openActionView
+import com.axiel7.anihyou.core.common.utils.ContextUtils.openShareSheet
 import com.axiel7.anihyou.core.common.utils.NumberUtils.format
+import com.axiel7.anihyou.core.common.utils.NumberUtils.isGreaterThanZero
 import com.axiel7.anihyou.core.common.utils.StringUtils.htmlStripped
 import com.axiel7.anihyou.core.common.utils.StringUtils.orUnknown
+import com.axiel7.anihyou.core.domain.model.CustomLink
 import com.axiel7.anihyou.core.model.Theme
 import com.axiel7.anihyou.core.model.genre.SelectableGenre.Companion.genreTagLocalized
 import com.axiel7.anihyou.core.model.media.durationText
@@ -91,24 +95,27 @@ import com.axiel7.anihyou.core.ui.common.LocalNavActionManager
 import com.axiel7.anihyou.core.ui.common.navigation.NavActionManager
 import com.axiel7.anihyou.core.ui.common.navigation.Route
 import com.axiel7.anihyou.core.ui.composables.ConnectedButtonGroup
+import com.axiel7.anihyou.core.ui.composables.SwitchPreference
 import com.axiel7.anihyou.core.ui.composables.TextIconHorizontal
 import com.axiel7.anihyou.core.ui.composables.TextSubtitleVertical
 import com.axiel7.anihyou.core.ui.composables.TopBannerView
+import com.axiel7.anihyou.core.ui.composables.bottomShape
 import com.axiel7.anihyou.core.ui.composables.character.CharacterVoiceActorsSheet
 import com.axiel7.anihyou.core.ui.composables.common.BackIconButton
 import com.axiel7.anihyou.core.ui.composables.common.ErrorDialogHandler
 import com.axiel7.anihyou.core.ui.composables.common.FavoriteIconButton
 import com.axiel7.anihyou.core.ui.composables.common.IconButtonWithMenu
-import com.axiel7.anihyou.core.ui.composables.common.ShareIconButton
 import com.axiel7.anihyou.core.ui.composables.common.TranslateIconButton
 import com.axiel7.anihyou.core.ui.composables.common.singleClick
 import com.axiel7.anihyou.core.ui.composables.defaultPlaceholder
 import com.axiel7.anihyou.core.ui.composables.media.MEDIA_POSTER_BIG_HEIGHT
 import com.axiel7.anihyou.core.ui.composables.media.MEDIA_POSTER_BIG_WIDTH
 import com.axiel7.anihyou.core.ui.composables.media.MediaPoster
+import com.axiel7.anihyou.core.ui.composables.middleShape
 import com.axiel7.anihyou.core.ui.composables.sheet.SelectionSheet
 import com.axiel7.anihyou.core.ui.composables.sheet.SelectionSheetItem
 import com.axiel7.anihyou.core.ui.composables.spoilerPlaceholder
+import com.axiel7.anihyou.core.ui.composables.topShape
 import com.axiel7.anihyou.core.ui.theme.AniHyouTheme
 import com.axiel7.anihyou.core.ui.utils.ComposeDateUtils.secondsToLegibleText
 import com.axiel7.anihyou.core.ui.utils.StringUtils.htmlDecoded
@@ -180,6 +187,7 @@ private fun MediaDetailsContent(
         derivedStateOf { topAppBarScrollBehavior.state.overlappedFraction == 1f }
     }
     var showEditSheet by rememberSaveable { mutableStateOf(false) }
+    var showNotificationSheet by rememberSaveable { mutableStateOf(false) }
 
     var isSynopsisExpanded by rememberSaveable { mutableStateOf(false) }
     val maxLinesSynopsis by remember {
@@ -215,6 +223,33 @@ private fun MediaDetailsContent(
             },
             onDismissed = { showEditSheet = false }
         )
+    }
+
+    if (showNotificationSheet) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showNotificationSheet = false
+                event?.writeNotificationAllowanceToDatabase()
+            },
+        ) {
+            AiringNotificationType.entries.fastForEachIndexed { index, type ->
+                SwitchPreference(
+                    title = type.localized(),
+                    preferenceValue = uiState.allowNotifications(type),
+                    enabled = if (type == AiringNotificationType.END) {
+                        uiState.details?.basicMediaDetails?.episodes.isGreaterThanZero()
+                    } else true,
+                    onValueChange = { event?.changeNotificationAllowance(type, it) },
+                    icon = type.icon,
+                    shape = when (index) {
+                        0 -> topShape
+                        AiringNotificationType.entries.size - 1 -> bottomShape
+                        else -> middleShape
+                    },
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+        }
     }
 
     if (uiState.showVoiceActorsSheet) {
@@ -260,9 +295,41 @@ private fun MediaDetailsContent(
                             }
                         )
                     }
-                    ShareIconButton(
-                        url = { uiState.details?.siteUrlWithTitle().orEmpty() }
-                    )
+                    IconButtonWithMenu(
+                        icon = R.drawable.more_vert_24,
+                        contentDescription = stringResource(R.string.show_more)
+                    ) { onDismiss ->
+                        DropdownMenuItem(
+                            onClick = {
+                                context.openShareSheet(uiState.details?.siteUrlWithTitle().orEmpty())
+                                onDismiss()
+                            },
+                            text = { Text(text = stringResource(R.string.share)) },
+                            leadingIcon = {
+                                Icon(
+                                    painter = painterResource(R.drawable.share_24),
+                                    contentDescription = stringResource(R.string.share),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        )
+
+                        if (uiState.showNotificationSettings) {
+                            DropdownMenuItem(
+                                onClick = {
+                                    showNotificationSheet = true
+                                    onDismiss()
+                                },
+                                text = { Text(text = stringResource(R.string.notifications)) },
+                                leadingIcon = {
+                                    Icon(
+                                        painter = painterResource(R.drawable.notifications_active_filled_24),
+                                        contentDescription = stringResource(R.string.notifications),
+                                    )
+                                }
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
@@ -315,7 +382,7 @@ private fun MediaDetailsContent(
                     url = uiState.details?.coverImage?.large,
                     enableBlur = false,
                     modifier = Modifier
-                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp)
                         .size(
                             width = MEDIA_POSTER_BIG_WIDTH.dp,
                             height = MEDIA_POSTER_BIG_HEIGHT.dp
@@ -477,7 +544,7 @@ private fun MediaDetailsContent(
                         else -> uiState.details.description!!.htmlDecoded().toAnnotatedString()
                     },
                     modifier = Modifier
-                        .padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 8.dp)
+                        .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)
                         .clip(MaterialTheme.shapes.extraSmall)
                         .clickable { isSynopsisExpanded = !isSynopsisExpanded }
                         .animateContentSize()
@@ -492,7 +559,7 @@ private fun MediaDetailsContent(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                    .padding(start = 16.dp, end = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -618,7 +685,18 @@ private fun CustomLinksButton(
 ) {
     val context = LocalContext.current
     var titleSheetExpanded by remember { mutableStateOf(false) }
-    var selectedLink by remember { mutableStateOf<String?>(null) }
+    var selectedLink by remember { mutableStateOf<CustomLink?>(null) }
+
+    fun openSite(link: CustomLink, title: String) {
+        val finalLink = link.mediaLink(title)
+        if (link.isIntent) {
+            runCatching {
+                context.startActivity(Intent.parseUri(finalLink, 0))
+            }
+        } else {
+            context.openActionView(finalLink)
+        }
+    }
 
     IconButtonWithMenu(
         icon = R.drawable.link_24,
@@ -626,19 +704,16 @@ private fun CustomLinksButton(
     ) { onDismiss ->
         uiState.customLinks.forEachIndexed { index, item ->
             DropdownMenuItem(
-                text = {
-                    val urlString = item.substring(1)
-                    val uri = urlString.toUri()
-                    val scheme = uri.scheme
-                        ?.takeIf { !it.startsWith("http") }
-                        ?.plus("://")
-                    val name = if (uri.host != null) scheme.orEmpty() + uri.host else urlString
-
-                    Text(text = name)
-                },
+                text = { Text(text = item.name) },
                 onClick = {
-                    selectedLink = item
-                    titleSheetExpanded = true
+                    item.titleLanguage?.let { lang ->
+                        uiState.findTitle(lang)?.let { title ->
+                            openSite(item, title)
+                        }
+                    } ?: run {
+                        selectedLink = item
+                        titleSheetExpanded = true
+                    }
                     onDismiss()
                 },
                 shape = when (index) {
@@ -652,16 +727,6 @@ private fun CustomLinksButton(
 
     selectedLink?.let { selectedLink ->
         if (titleSheetExpanded) {
-            fun openSite(title: String) {
-                val separator = selectedLink.first()
-                val link = selectedLink.substring(1)
-                val finalLink = link.replace(
-                    CUSTOM_URL_NAME_PLACEHOLDER,
-                    title.replace(' ', separator)
-                )
-                context.openActionView(finalLink)
-            }
-
             SelectionSheet(
                 onDismiss = { titleSheetExpanded = false },
                 bottomPadding = WindowInsets.navigationBars.asPaddingValues()
@@ -670,19 +735,19 @@ private fun CustomLinksButton(
                 uiState.details?.title?.romaji?.let { title ->
                     SelectionSheetItem(
                         name = title,
-                        onClick = { openSite(title) }
+                        onClick = { openSite(selectedLink, title) }
                     )
                 }
                 uiState.details?.title?.english?.let { title ->
                     SelectionSheetItem(
                         name = title,
-                        onClick = { openSite(title) }
+                        onClick = { openSite(selectedLink, title) }
                     )
                 }
                 uiState.details?.title?.native?.let { title ->
                     SelectionSheetItem(
                         name = title,
-                        onClick = { openSite(title) }
+                        onClick = { openSite(selectedLink, title) }
                     )
                 }
             }

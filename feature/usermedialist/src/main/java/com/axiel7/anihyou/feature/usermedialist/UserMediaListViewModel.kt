@@ -191,8 +191,9 @@ class UserMediaListViewModel(
         mutableUiState.value.run {
             selectedItem?.let { selectedItem ->
                 if (selectedItem.basicMediaListEntry != newListEntry) {
-                    val selectedListName = selectedListName ?: return
-                    val list = lists[selectedListName]?.toMutableList() ?: return
+                    val list = if (selectedListName != null) {
+                        lists[selectedListName]?.toMutableList() ?: return
+                    } else entries
                     if (newListEntry != null) {
                         list.indexOfFirstOrNull { it.mediaId == selectedItem.mediaId }
                             ?.let { index ->
@@ -229,8 +230,10 @@ class UserMediaListViewModel(
                     } else {
                         list.remove(selectedItem)
                     }
-                    lists[selectedListName] = list
-                    onChangeList(selectedListName)
+                    if (selectedListName != null) {
+                        lists[selectedListName] = list
+                        onChangeList(selectedListName)
+                    }
                 }
             }
         }
@@ -270,6 +273,8 @@ class UserMediaListViewModel(
                         && yearMatch(entry)
                         && genreMatch(entry)
                         && tagMatch(entry)
+                        && episodesChaptersMatch(entry)
+                        && volumesDurationMatch(entry)
             }
             if (filteredList.isNotEmpty()) {
                 mutableUiState.update {
@@ -322,6 +327,14 @@ class UserMediaListViewModel(
         }
     }
 
+    override fun setEpisodesChapters(value: IntRange?) {
+        mutableUiState.update { it.copy(episodesChaptersRange = value) }
+    }
+
+    override fun setDurationVolumes(value: IntRange?) {
+        mutableUiState.update { it.copy(durationVolumesRange = value) }
+    }
+
     override fun clearFilters() {
         mutableUiState.update {
             it.copy(
@@ -330,6 +343,8 @@ class UserMediaListViewModel(
                 country = null,
                 year = null,
                 genresAndTagsForSearch = GenresAndTagsForSearch(),
+                episodesChaptersRange = null,
+                durationVolumesRange = null,
                 clearedFilters = true,
             )
         }
@@ -400,6 +415,24 @@ class UserMediaListViewModel(
         return tagInMatch && tagNotMatch
     }
 
+    private fun UserMediaListUiState.episodesChaptersMatch(entry: CommonMediaListEntry) =
+        episodesChaptersRange?.let { range ->
+            if (mediaType == MediaType.ANIME) {
+                entry.media?.basicMediaDetails?.episodes?.let { it in range } ?: false
+            } else {
+                entry.media?.basicMediaDetails?.chapters?.let { it in range } ?: false
+            }
+        } ?: true
+
+    private fun UserMediaListUiState.volumesDurationMatch(entry: CommonMediaListEntry) =
+        durationVolumesRange?.let { range ->
+            if (mediaType == MediaType.ANIME) {
+                entry.media?.basicMediaDetails?.duration?.let { it in range } ?: false
+            } else {
+                entry.media?.basicMediaDetails?.volumes?.let { it in range } ?: false
+            }
+        } ?: true
+
     private fun UserMediaListUiState.applyPartition() {
         if (separateNovelsAndManga && mediaType == MediaType.MANGA) {
             val (novels, manga) = entries.partition { it.media?.format == MediaFormat.NOVEL }
@@ -441,6 +474,8 @@ class UserMediaListViewModel(
                                 && uiState.yearMatch(entry)
                                 && uiState.genreMatch(entry)
                                 && uiState.tagMatch(entry)
+                                && uiState.episodesChaptersMatch(entry)
+                                && uiState.volumesDurationMatch(entry)
 
                         if (!matchesFilters) return@mapNotNull null
 
@@ -475,6 +510,8 @@ class UserMediaListViewModel(
                                 && uiState.yearMatch(entry)
                                 && uiState.genreMatch(entry)
                                 && uiState.tagMatch(entry)
+                                && uiState.episodesChaptersMatch(entry)
+                                && uiState.volumesDurationMatch(entry)
 
                         if (!matchesFilters) return@filter false
 
@@ -547,6 +584,8 @@ class UserMediaListViewModel(
                         && old.country == new.country
                         && old.year == new.year
                         && old.genresAndTagsForSearch == new.genresAndTagsForSearch
+                        && old.episodesChaptersRange == new.episodesChaptersRange
+                        && old.durationVolumesRange == new.durationVolumesRange
                         && old.clearedFilters == new.clearedFilters
             }
             .debounce { uiState ->
