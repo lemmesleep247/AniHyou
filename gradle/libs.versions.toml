@@ -6,7 +6,7 @@ wear-compileSdk = "37"
 wear-minSdk = "26"
 wear-targetSdk = "37"
 accompanist = "0.37.3"
-agp = "9.4.1"
+agp = "9.5.0"
 apollo = "5.2.0"
 apolloCache = "1.0.9"
 appcompat = "1.8.0"
@@ -58,7 +58,7 @@ corePerfromance = "1.0.0"
 immutable = "0.5.2"
 stabilityAnalyzer = "0.15.0"
 room = "3.0.3"
-ksp = "2.3.12"
+ksp = "2.3.13"
 
 [libraries]
 accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanist" }
